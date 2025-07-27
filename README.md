@@ -275,10 +275,6 @@ The program handles various error cases:
 
 4. **Multiple Events**: Save different output files for tournament records
 
-## License
-
-This tool is provided as-is for personal and community use.
-
 ## Contributing
 
 Feel free to suggest improvements or report issues!
