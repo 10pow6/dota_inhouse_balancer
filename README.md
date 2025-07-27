@@ -119,7 +119,12 @@ cd <repository-name>
    python3 dota_team_balancer.py
    ```
 
-3. **Review the top 3 balanced team options and choose one to save**
+3. **Review the top 3 balanced team options**
+
+4. **Choose to save results:**
+   - Save a specific option (1, 2, or 3)
+   - Save all options
+   - Specify custom filename (default: teams.txt)
 
 ## File Formats
 
