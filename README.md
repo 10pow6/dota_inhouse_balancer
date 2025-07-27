@@ -35,23 +35,91 @@ cd <repository-name>
 2. Create your player list file (see format below)
 3. Optionally create team restrictions file
 
+## Installing Python
+
+### Windows
+
+1. **Download Python**
+   - Go to [python.org/downloads](https://python.org/downloads)
+   - Click "Download Python 3.x.x" (latest version)
+   - **Important**: Check ✅ "Add Python to PATH" during installation
+
+2. **Verify Installation**
+   - Open Command Prompt (Win+R, type `cmd`, press Enter)
+   - Type: `python --version`
+   - You should see: `Python 3.x.x`
+
+### macOS
+
+1. **Install Python** (if not already installed)
+   - Option A: Download from [python.org/downloads](https://python.org/downloads)
+   - Option B: Use Homebrew: `brew install python3`
+
+2. **Verify Installation**
+   - Open Terminal (Cmd+Space, type "Terminal")
+   - Type: `python3 --version`
+   - You should see: `Python 3.x.x`
+
+### Linux
+
+1. **Install Python** (usually pre-installed)
+   ```bash
+   # Ubuntu/Debian
+   sudo apt update
+   sudo apt install python3
+
+   # Fedora
+   sudo dnf install python3
+
+   # Arch
+   sudo pacman -S python
+   ```
+
+2. **Verify Installation**
+   ```bash
+   python3 --version
+   ```
+
+## First Time Setup
+
+1. **Create your folder structure:**
+   ```
+   DotaBalancer/
+   ├── dota_team_balancer.py
+   ├── player_list.txt
+   └── prevent_same_team.txt (optional)
+   ```
+
+2. **Test with sample data:**
+   - Run the program once without files
+   - When prompted, type `y` to create sample files
+   - Rename samples: 
+     - `player_list_sample.txt` → `player_list.txt`
+     - `prevent_same_team_sample.txt` → `prevent_same_team.txt`
+
+3. **Edit player_list.txt** with your players and set exactly 10 to "playing"
+
 ## Quick Start
 
-1. Create `player_list.txt` with your players:
-```
-name,mmr,playing
-Alice,3000,yes
-Bob,3500,yes
-Charlie,4000,yes
-...
-```
+1. **Navigate to your DotaBalancer folder:**
+   ```bash
+   # Windows
+   cd C:\DotaBalancer
+   
+   # macOS/Linux
+   cd ~/DotaBalancer
+   ```
 
-2. Run the program:
-```bash
-python dota_team_balancer.py
-```
+2. **Run the program:**
+   ```bash
+   # Windows
+   python dota_team_balancer.py
+   
+   # macOS/Linux
+   python3 dota_team_balancer.py
+   ```
 
-3. Review the top 3 balanced team options and choose one to save
+3. **Review the top 3 balanced team options and choose one to save**
 
 ## File Formats
 
@@ -88,6 +156,17 @@ This means:
 - David and Eve cannot be on the same team
 - Frank, Grace, and Henry cannot all be on the same team
 
+## Sample Files
+
+The program can automatically create sample files for you:
+- `player_list_sample.txt`: Example with 20 players (10 playing)
+- `prevent_same_team_sample.txt`: Example restriction file
+
+To create samples:
+1. Run the program without any existing files
+2. When prompted, type `y` to create sample files
+3. Rename the samples to remove "_sample" from the filename
+
 ## How It Works
 
 ### RMS (Root Mean Square) Method
@@ -105,84 +184,7 @@ This method gives slightly more weight to higher-skilled players compared to sim
 4. Calculates RMS difference for each valid combination
 5. Returns the top 3 most balanced options
 
-## Installing Python and Running the Team Balancer
-
-### Windows
-
-1. **Download Python**
-   - Go to [python.org/downloads](https://python.org/downloads)
-   - Click "Download Python 3.x.x" (latest version)
-   - **Important**: Check ✅ "Add Python to PATH" during installation
-
-2. **Verify Installation**
-   - Open Command Prompt (Win+R, type `cmd`, press Enter)
-   - Type: `python --version`
-   - You should see: `Python 3.x.x`
-
-3. **Run the Team Balancer**
-   - Save all files in a folder (e.g., `C:\DotaBalancer`)
-   - Open Command Prompt
-   - Navigate to your folder: `cd C:\DotaBalancer`
-   - Run: `python dota_team_balancer.py`
-
-### macOS
-
-1. **Install Python** (if not already installed)
-   - Option A: Download from [python.org/downloads](https://python.org/downloads)
-   - Option B: Use Homebrew: `brew install python3`
-
-2. **Verify Installation**
-   - Open Terminal (Cmd+Space, type "Terminal")
-   - Type: `python3 --version`
-   - You should see: `Python 3.x.x`
-
-3. **Run the Team Balancer**
-   - Save all files in a folder (e.g., Desktop/DotaBalancer)
-   - Open Terminal
-   - Navigate to folder: `cd ~/Desktop/DotaBalancer`
-   - Run: `python3 dota_team_balancer.py`
-
-### Linux
-
-1. **Install Python** (usually pre-installed)
-   ```bash
-   # Ubuntu/Debian
-   sudo apt update
-   sudo apt install python3
-
-   # Fedora
-   sudo dnf install python3
-
-   # Arch
-   sudo pacman -S python
-   ```
-
-2. **Run the Team Balancer**
-   ```bash
-   cd /path/to/dota-balancer
-   python3 dota_team_balancer.py
-   ```
-
-### First Time Setup
-
-1. **Create your folder structure:**
-   ```
-   DotaBalancer/
-   ├── dota_team_balancer.py
-   ├── player_list.txt
-   └── prevent_same_team.txt (optional)
-   ```
-
-2. **Test with sample data:**
-   - Run the program once without files
-   - When prompted, type `y` to create sample files
-   - Rename samples: 
-     - `player_list_sample.txt` → `player_list.txt`
-     - `prevent_same_team_sample.txt` → `prevent_same_team.txt`
-
-3. **Edit player_list.txt** with your players and set exactly 10 to "playing"
-
-### Sample Output
+## Sample Output
 ```
 TOP 3 MOST BALANCED TEAM ASSIGNMENTS
 ==================================================
@@ -227,25 +229,6 @@ The program handles various error cases:
 - Invalid player restrictions
 - Too restrictive team constraints
 
-## Tips
-
-1. **Player Pool**: Maintain a larger list of regular players and update the "playing" column for each event
-
-2. **Restrictions**: Use team restrictions to:
-   - Separate players who play the same role
-   - Keep friends on different teams for variety
-   - Prevent personality conflicts
-
-3. **MMR Updates**: Keep MMR values current for best results
-
-4. **Multiple Events**: Save different output files for tournament records
-
-## Sample Files
-
-Run the program without any files and it will offer to create samples:
-- `player_list_sample.txt`: Example with 20 players (10 playing)
-- `prevent_same_team_sample.txt`: Example restriction file
-
 ## Troubleshooting
 
 **"python is not recognized" (Windows)**
@@ -273,6 +256,19 @@ Run the program without any files and it will offer to create samples:
 - Check for correct number of columns (3)
 - Ensure header row exists
 - Verify MMR values are numbers
+
+## Tips
+
+1. **Player Pool**: Maintain a larger list of regular players and update the "playing" column for each event
+
+2. **Restrictions**: Use team restrictions to:
+   - Separate players who play the same role
+   - Keep friends on different teams for variety
+   - Prevent personality conflicts
+
+3. **MMR Updates**: Keep MMR values current for best results
+
+4. **Multiple Events**: Save different output files for tournament records
 
 ## License
 
