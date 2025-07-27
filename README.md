@@ -18,7 +18,20 @@ A Python tool that creates balanced DOTA 2 teams based on player MMR using the R
 
 ## Installation
 
-1. Download `dota_team_balancer.py`
+### Option 1: Download from GitHub (Recommended)
+1. Visit the repository on GitHub
+2. Click the green "Code" button and select "Download ZIP"
+3. Extract the ZIP file to your desired location
+4. You'll get all necessary files including sample files
+
+### Option 2: Clone with Git
+```bash
+git clone <repository-url>
+cd <repository-name>
+```
+
+### Option 3: Download Individual Files
+1. Download `dota_team_balancer.py` from the repository
 2. Create your player list file (see format below)
 3. Optionally create team restrictions file
 
