@@ -7,6 +7,7 @@ A Python tool that creates balanced DOTA 2 teams based on player MMR using the R
 - **RMS-based balancing**: Uses quadratic mean for more accurate team balance
 - **Multiple options**: Generates top 3 most balanced team configurations
 - **Player restrictions**: Prevents specific players from being on the same team
+- **Force same team**: Ensure specific players are placed on the same team
 - **Flexible player list**: Maintain a master list and mark who's playing each event
 - **Error handling**: Comprehensive validation and helpful error messages
 - **Export options**: Save results to file for easy sharing
@@ -31,9 +32,9 @@ cd <repository-name>
 ```
 
 ### Option 3: Download Individual Files
-1. Download `dota_team_balancer.py` from the repository
+1. Download `dota_team_balancer.py` or `dota_team_balancer2.py` from the repository
 2. Create your player list file (see format below)
-3. Optionally create team restrictions file
+3. Optionally create team restrictions and/or force same team files
 
 ## Installing Python
 
@@ -85,9 +86,11 @@ cd <repository-name>
 1. **Create your folder structure:**
    ```
    DotaBalancer/
-   ├── dota_team_balancer.py
+   ├── dota_team_balancer.py (original version)
+   ├── dota_team_balancer2.py (with force_same_team feature)
    ├── player_list.txt
-   └── prevent_same_team.txt (optional)
+   ├── prevent_same_team.txt (optional)
+   └── force_same_team.txt (optional, for dota_team_balancer2.py)
    ```
 
 2. **Test with sample data:**
@@ -96,6 +99,7 @@ cd <repository-name>
    - Rename samples: 
      - `player_list_sample.txt` → `player_list.txt`
      - `prevent_same_team_sample.txt` → `prevent_same_team.txt`
+     - `force_same_team_sample.txt` → `force_same_team.txt` (if using dota_team_balancer2.py)
 
 3. **Edit player_list.txt** with your players and set exactly 10 to "playing"
 
@@ -112,11 +116,17 @@ cd <repository-name>
 
 2. **Run the program:**
    ```bash
-   # Windows
+   # For original version (Windows)
    python dota_team_balancer.py
    
-   # macOS/Linux
+   # For original version (macOS/Linux)
    python3 dota_team_balancer.py
+   
+   # For version with force_same_team feature (Windows)
+   python dota_team_balancer2.py
+   
+   # For version with force_same_team feature (macOS/Linux)
+   python3 dota_team_balancer2.py
    ```
 
 3. **Review the top 3 balanced team options**
@@ -161,11 +171,28 @@ This means:
 - David and Eve cannot be on the same team
 - Frank, Grace, and Henry cannot all be on the same team
 
+### force_same_team.txt (Optional - for dota_team_balancer2.py)
+- **Format**: Comma-separated player names per line
+- **Purpose**: Force certain players to be on the same team
+
+Example:
+```
+Alice,David
+Frank,Jack
+```
+
+This means:
+- Alice and David must be on the same team
+- Frank and Jack must be on the same team
+
+**Note**: If there are conflicts between prevent_same_team and force_same_team (e.g., two players are both forced together AND restricted from being together), the program will notify you and won't be able to generate valid teams.
+
 ## Sample Files
 
 The program can automatically create sample files for you:
 - `player_list_sample.txt`: Example with 20 players (10 playing)
 - `prevent_same_team_sample.txt`: Example restriction file
+- `force_same_team_sample.txt`: Example force same team file (dota_team_balancer2.py only)
 
 To create samples:
 1. Run the program without any existing files
@@ -185,9 +212,10 @@ This method gives slightly more weight to higher-skilled players compared to sim
 ### Algorithm
 1. Reads all players marked as "playing" (must be exactly 10)
 2. Generates all possible 5v5 team combinations (252 total)
-3. Filters out combinations that violate team restrictions
-4. Calculates RMS difference for each valid combination
-5. Returns the top 3 most balanced options
+3. Filters out combinations that violate team restrictions (prevent_same_team)
+4. Filters out combinations that don't respect forced teams (force_same_team - dota_team_balancer2.py only)
+5. Calculates RMS difference for each valid combination
+6. Returns the top 3 most balanced options
 
 ## Sample Output
 ```
@@ -266,10 +294,15 @@ The program handles various error cases:
 
 1. **Player Pool**: Maintain a larger list of regular players and update the "playing" column for each event
 
-2. **Restrictions**: Use team restrictions to:
-   - Separate players who play the same role
-   - Keep friends on different teams for variety
-   - Prevent personality conflicts
+2. **Team Controls**: 
+   - Use prevent_same_team.txt to:
+     - Separate players who play the same role
+     - Keep friends on different teams for variety
+     - Prevent personality conflicts
+   - Use force_same_team.txt (dota_team_balancer2.py) to:
+     - Keep party/duo players together
+     - Ensure synergistic players are on same team
+     - Keep new players with mentors
 
 3. **MMR Updates**: Keep MMR values current for best results
 
