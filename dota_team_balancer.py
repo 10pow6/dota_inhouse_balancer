@@ -8,21 +8,17 @@ def calculate_rms(team_mmrs):
     return math.sqrt(sum(mmr**2 for mmr in team_mmrs) / len(team_mmrs))
 
 def read_team_restrictions(filename="prevent_same_team.txt"):
-    """Read team restrictions from file"""
+    """Read team restrictions from file (players who cannot be on same team)"""
     restrictions = []
     
-    # If file doesn't exist, return empty restrictions
     try:
         with open(filename, 'r', encoding='utf-8-sig') as file:
             for line_num, line in enumerate(file, 1):
                 line = line.strip()
-                if not line:  # Skip empty lines
+                if not line:
                     continue
                 
-                # Split by comma and clean up names
                 players = [p.strip() for p in line.split(',')]
-                
-                # Filter out empty strings
                 players = [p for p in players if p]
                 
                 if len(players) >= 2:
@@ -38,7 +34,38 @@ def read_team_restrictions(filename="prevent_same_team.txt"):
         return restrictions
     
     except FileNotFoundError:
-        # File is optional, so just return empty list
+        return []
+    except Exception as e:
+        print(f"Warning: Error reading {filename}: {str(e)}")
+        return []
+
+def read_force_same_team(filename="force_same_team.txt"):
+    """Read forced team combinations from file (players who must be on same team)"""
+    forced_groups = []
+    
+    try:
+        with open(filename, 'r', encoding='utf-8-sig') as file:
+            for line_num, line in enumerate(file, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                
+                players = [p.strip() for p in line.split(',')]
+                players = [p for p in players if p]
+                
+                if len(players) >= 2:
+                    forced_groups.append(players)
+                elif len(players) == 1:
+                    print(f"Warning: Line {line_num} in {filename} has only one player: {players[0]}")
+        
+        if forced_groups:
+            print(f"\nLoaded {len(forced_groups)} forced team combinations from {filename}")
+            for i, group in enumerate(forced_groups, 1):
+                print(f"  {i}. {', '.join(group)} must be on the same team")
+        
+        return forced_groups
+    
+    except FileNotFoundError:
         return []
     except Exception as e:
         print(f"Warning: Error reading {filename}: {str(e)}")
@@ -46,54 +73,76 @@ def read_team_restrictions(filename="prevent_same_team.txt"):
 
 def check_team_validity(team_indices, player_names, restrictions):
     """Check if a team composition violates any restrictions"""
-    # Get the names of players in this team
     team_names = [player_names[i] for i in team_indices]
     
-    # Check each restriction
     for restricted_group in restrictions:
-        # Count how many restricted players are in this team
         count = sum(1 for player in restricted_group if player in team_names)
-        
-        # If 2 or more players from a restricted group are on the same team, it's invalid
         if count >= 2:
             return False
     
     return True
 
-def find_best_team_assignments(players_mmr, restrictions=None, top_n=3):
-    """Find the top N most balanced team assignments using RMS with restrictions"""
+def check_forced_team_validity(team_a_indices, team_b_indices, player_names, forced_groups):
+    """Check if team assignments respect forced team combinations"""
+    team_a_names = [player_names[i] for i in team_a_indices]
+    team_b_names = [player_names[i] for i in team_b_indices]
+    
+    for forced_group in forced_groups:
+        players_in_a = sum(1 for player in forced_group if player in team_a_names)
+        players_in_b = sum(1 for player in forced_group if player in team_b_names)
+        
+        # If any players from a forced group are present, ALL must be on the same team
+        if players_in_a > 0 and players_in_b > 0:
+            return False
+        
+        # Check if all players from the forced group who are playing are together
+        total_playing = players_in_a + players_in_b
+        if total_playing > 0:
+            # If we have some but not all players from the group, and they're split, it's invalid
+            if 0 < players_in_a < total_playing or 0 < players_in_b < total_playing:
+                # This means they're split between teams
+                return False
+    
+    return True
+
+def find_best_team_assignments(players_mmr, restrictions=None, forced_groups=None, top_n=3):
+    """Find the top N most balanced team assignments using RMS with restrictions and forced teams"""
     n = len(players_mmr)
     player_names = [p[0] for p in players_mmr]
     
-    # Generate all possible combinations of 5 players for team A
     all_combinations = itertools.combinations(range(n), 5)
     
-    # Store all valid assignments with their differences
     assignments = []
     invalid_count = 0
+    restriction_violations = 0
+    forced_violations = 0
     
     for team_a_indices in all_combinations:
-        # Get team B indices (remaining players)
         team_b_indices = tuple(i for i in range(n) if i not in team_a_indices)
         
-        # Check if both teams are valid according to restrictions
+        # Check restrictions (cannot be on same team)
         if restrictions:
             team_a_valid = check_team_validity(team_a_indices, player_names, restrictions)
             team_b_valid = check_team_validity(team_b_indices, player_names, restrictions)
             
             if not (team_a_valid and team_b_valid):
+                restriction_violations += 1
                 invalid_count += 1
                 continue
         
-        # Get MMRs for each team
+        # Check forced teams (must be on same team)
+        if forced_groups:
+            if not check_forced_team_validity(team_a_indices, team_b_indices, player_names, forced_groups):
+                forced_violations += 1
+                invalid_count += 1
+                continue
+        
         team_a_mmrs = [players_mmr[i][1] for i in team_a_indices]
         team_b_mmrs = [players_mmr[i][1] for i in team_b_indices]
         
-        # Calculate RMS for each team
         rms_a = calculate_rms(team_a_mmrs)
         rms_b = calculate_rms(team_b_mmrs)
         
-        # Calculate difference
         difference = abs(rms_a - rms_b)
         
         assignments.append({
@@ -105,13 +154,16 @@ def find_best_team_assignments(players_mmr, restrictions=None, top_n=3):
         })
     
     if invalid_count > 0:
-        print(f"\nFiltered out {invalid_count} team combinations due to restrictions")
+        print(f"\nFiltered out {invalid_count} team combinations:")
+        if restriction_violations > 0:
+            print(f"  - {restriction_violations} due to 'prevent same team' restrictions")
+        if forced_violations > 0:
+            print(f"  - {forced_violations} due to 'force same team' requirements")
         print(f"Valid combinations remaining: {len(assignments)}")
     
     if not assignments:
-        raise ValueError("No valid team combinations found with the given restrictions!")
+        raise ValueError("No valid team combinations found with the given restrictions and forced teams!")
     
-    # Sort by difference and return top N
     assignments.sort(key=lambda x: x['difference'])
     return assignments[:min(top_n, len(assignments))]
 
@@ -122,21 +174,18 @@ def read_players_from_file(filename="player_list.txt"):
     errors = []
     
     try:
-        with open(filename, 'r', encoding='utf-8-sig') as file:  # utf-8-sig handles BOM
+        with open(filename, 'r', encoding='utf-8-sig') as file:
             lines = file.readlines()
             
             if not lines:
                 raise ValueError("File is empty")
             
-            # Check first line for header
             first_line = lines[0].strip()
             start_line = 0
             
-            # Detect if first line is header
             if 'name' in first_line.lower() or 'mmr' in first_line.lower():
                 start_line = 1
             else:
-                # Check if first line has non-numeric MMR value (likely header)
                 parts = first_line.split(',')
                 if len(parts) >= 2:
                     try:
@@ -144,13 +193,11 @@ def read_players_from_file(filename="player_list.txt"):
                     except ValueError:
                         start_line = 1
             
-            # Process data lines
             for line_num, line in enumerate(lines[start_line:], start_line + 1):
                 line = line.strip()
-                if not line:  # Skip empty lines
+                if not line:
                     continue
                 
-                # Try different delimiters
                 delimiter = ','
                 parts = line.split(delimiter)
                 
@@ -164,7 +211,6 @@ def read_players_from_file(filename="player_list.txt"):
                         errors.append(f"Line {line_num}: Expected 3 columns but got {len(parts)}: {line}")
                         continue
                 
-                # Parse player data
                 player_name = parts[0].strip()
                 if not player_name:
                     errors.append(f"Line {line_num}: Player name is empty")
@@ -177,7 +223,6 @@ def read_players_from_file(filename="player_list.txt"):
                         continue
                     if mmr > 10000:
                         errors.append(f"Line {line_num}: MMR seems too high (>10000): {mmr}")
-                        # Still process but warn
                 except ValueError:
                     errors.append(f"Line {line_num}: MMR must be a number, got: '{parts[1].strip()}'")
                     continue
@@ -185,12 +230,10 @@ def read_players_from_file(filename="player_list.txt"):
                 playing_status = parts[2].strip().lower()
                 is_playing = playing_status in ['yes', 'y', 'true', '1']
                 
-                # Check for invalid playing status
                 if playing_status not in ['yes', 'y', 'true', '1', 'no', 'n', 'false', '0']:
                     errors.append(f"Line {line_num}: Invalid playing status '{parts[2].strip()}'. Use yes/no, y/n, true/false, or 1/0")
                     continue
                 
-                # Store player
                 all_players.append({
                     'name': player_name,
                     'mmr': mmr,
@@ -200,10 +243,9 @@ def read_players_from_file(filename="player_list.txt"):
                 if is_playing:
                     playing_players.append((player_name, mmr))
             
-            # Report any errors found
             if errors:
                 print("\nWarnings/Errors found while reading file:")
-                for error in errors[:5]:  # Show first 5 errors
+                for error in errors[:5]:
                     print(f"  - {error}")
                 if len(errors) > 5:
                     print(f"  ... and {len(errors) - 5} more errors")
@@ -256,12 +298,27 @@ def validate_restrictions(restrictions, playing_players):
             print(f"  - {warning}")
         print()
 
+def validate_forced_teams(forced_groups, playing_players):
+    """Validate that forced team names match playing players"""
+    player_names = [p[0] for p in playing_players]
+    warnings = []
+    
+    for i, group in enumerate(forced_groups, 1):
+        for player in group:
+            if player not in player_names:
+                warnings.append(f"Forced team {i}: '{player}' is not in the list of playing players")
+    
+    if warnings:
+        print("\nWarnings about forced teams:")
+        for warning in warnings:
+            print(f"  - {warning}")
+        print()
+
 def print_assignment(players_data, assignment, option_num):
     """Print a single team assignment"""
     team_a = [players_data[i] for i in assignment['team_a_indices']]
     team_b = [players_data[i] for i in assignment['team_b_indices']]
     
-    # Calculate team statistics
     team_a_mmrs = [player[1] for player in team_a]
     team_b_mmrs = [player[1] for player in team_b]
     
@@ -324,7 +381,6 @@ def write_assignment_to_file(file, players_data, assignment, option_num):
 
 def create_sample_files():
     """Create sample files"""
-    # Create player_list.txt sample
     player_content = """name,mmr,playing
 Alice,3000,yes
 Bob,3500,yes
@@ -345,7 +401,6 @@ Oscar,3700,no
     with open("player_list_sample.txt", "w") as f:
         f.write(player_content)
     
-    # Create prevent_same_team.txt sample
     prevent_content = """Alice,Bob,Charlie
 David,Eve
 Frank,Grace,Henry
@@ -353,26 +408,30 @@ Frank,Grace,Henry
     with open("prevent_same_team_sample.txt", "w") as f:
         f.write(prevent_content)
     
+    force_content = """Alice,David
+Frank,Jack
+"""
+    with open("force_same_team_sample.txt", "w") as f:
+        f.write(force_content)
+    
     print("Created sample files:")
     print("  - 'player_list_sample.txt' (rename to 'player_list.txt')")
     print("  - 'prevent_same_team_sample.txt' (rename to 'prevent_same_team.txt')")
+    print("  - 'force_same_team_sample.txt' (rename to 'force_same_team.txt')")
 
 def main():
-    print("DOTA Team Balancer (RMS Method)")
+    print("DOTA Team Balancer with Force Same Team (RMS Method)")
     print("="*50)
     
     try:
-        # Read players from file
         all_players, playing_players = read_players_from_file("player_list.txt")
         
-        # Check if we got any valid data
         if not all_players:
             raise ValueError("No valid player data found in file")
         
         print(f"\nTotal players in list: {len(all_players)}")
         print(f"Players marked as playing: {len(playing_players)}")
         
-        # Validate player count
         if not validate_player_count(playing_players):
             return
         
@@ -380,42 +439,54 @@ def main():
         for i, (name, mmr) in enumerate(playing_players, 1):
             print(f"  {i}. {name}: {mmr}")
         
-        # Check for duplicate names
         names = [name for name, _ in playing_players]
         if len(names) != len(set(names)):
             print("\nWARNING: Duplicate player names detected!")
             duplicates = [name for name in names if names.count(name) > 1]
             print(f"Duplicates: {', '.join(set(duplicates))}")
         
-        # Read team restrictions
+        # Read both restrictions and forced teams
         restrictions = read_team_restrictions("prevent_same_team.txt")
+        forced_groups = read_force_same_team("force_same_team.txt")
         
-        # Validate restrictions against playing players
         if restrictions:
             validate_restrictions(restrictions, playing_players)
         
-        # Find top 3 best assignments with restrictions
+        if forced_groups:
+            validate_forced_teams(forced_groups, playing_players)
+        
+        # Check for conflicts between restrictions and forced teams
+        if restrictions and forced_groups:
+            for forced_group in forced_groups:
+                for restricted_group in restrictions:
+                    # Check if any two players are in both forced and restricted
+                    common = set(forced_group) & set(restricted_group)
+                    if len(common) >= 2:
+                        print("\nWARNING: Conflict detected!")
+                        print(f"Players {', '.join(common)} are both forced to be together AND restricted from being together!")
+                        print("This will make it impossible to find valid teams.")
+                        return
+        
         try:
-            top_assignments = find_best_team_assignments(playing_players, restrictions, top_n=3)
+            top_assignments = find_best_team_assignments(playing_players, restrictions, forced_groups, top_n=3)
         except ValueError as e:
             print(f"\nERROR: {e}")
-            print("\nThe team restrictions might be too strict. Consider relaxing some restrictions.")
+            print("\nThe team restrictions and forced teams might be conflicting or too strict.")
+            print("Consider relaxing some restrictions or forced team requirements.")
             return
         
         print("\n" + "="*50)
         print("TOP 3 MOST BALANCED TEAM ASSIGNMENTS")
-        if restrictions:
-            print("(With team restrictions applied)")
+        if restrictions or forced_groups:
+            print("(With team restrictions and forced teams applied)")
         print("="*50)
         
-        # Display all options (might be less than 3 if restrictions are tight)
         for i, assignment in enumerate(top_assignments, 1):
             print_assignment(playing_players, assignment, i)
         
         if len(top_assignments) < 3:
-            print(f"\nNote: Only {len(top_assignments)} valid team combinations found due to restrictions")
+            print(f"\nNote: Only {len(top_assignments)} valid team combinations found due to restrictions/forced teams")
         
-        # Let user choose which option to save
         print("\n" + "="*50)
         save = input("\nSave results to file? (y/n): ").strip().lower()
         if save == 'y':
@@ -427,8 +498,8 @@ def main():
             try:
                 with open(output_filename, 'w') as f:
                     f.write("DOTA TEAM ASSIGNMENTS\n")
-                    if restrictions:
-                        f.write("(With team restrictions applied)\n")
+                    if restrictions or forced_groups:
+                        f.write("(With team restrictions and forced teams applied)\n")
                     f.write("="*50 + "\n")
                     
                     if option == 'all':
@@ -466,6 +537,9 @@ def main():
         print("\n2. 'prevent_same_team.txt' (optional) with format:")
         print("   player1,player2,player3")
         print("   player4,player5")
+        print("\n3. 'force_same_team.txt' (optional) with format:")
+        print("   player1,player2")
+        print("   player3,player4")
 
 if __name__ == "__main__":
     main()
