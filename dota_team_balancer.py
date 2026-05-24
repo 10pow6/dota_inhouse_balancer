@@ -110,13 +110,18 @@ def find_best_team_assignments(players_mmr, restrictions=None, forced_groups=Non
     n = len(players_mmr)
     player_names = [p[0] for p in players_mmr]
     
-    all_combinations = itertools.combinations(range(n), 5)
-    
+    # Anchor index 0 to team A so each split is counted once
+    # (otherwise {0,1,2,3,4} vs {5,6,7,8,9} appears twice with teams swapped)
+    all_combinations = (
+        (0,) + combo
+        for combo in itertools.combinations(range(1, n), 4)
+    )
+
     assignments = []
     invalid_count = 0
     restriction_violations = 0
     forced_violations = 0
-    
+
     for team_a_indices in all_combinations:
         team_b_indices = tuple(i for i in range(n) if i not in team_a_indices)
         
