@@ -187,14 +187,24 @@ def read_players_from_file(filename="player_list.txt"):
             
             first_line = lines[0].strip()
             start_line = 0
-            
-            if 'name' in first_line.lower() or 'mmr' in first_line.lower():
-                start_line = 1
-            else:
-                parts = first_line.split(',')
-                if len(parts) >= 2:
+
+            # Detect a header row by structure, not by substring match, so that
+            # player names like "Nameless" or "Mmravic" aren't mistaken for headers.
+            header_fields = None
+            for delim in [',', '\t', '|', ';']:
+                candidate = [p.strip().lower() for p in first_line.split(delim)]
+                if len(candidate) >= 2:
+                    header_fields = candidate
+                    break
+
+            if header_fields:
+                # It's a header if a known column name appears as a full field, or if
+                # the second column isn't an integer (data rows always have numeric MMR).
+                if header_fields[0] == 'name' or 'mmr' in header_fields or 'playing' in header_fields:
+                    start_line = 1
+                else:
                     try:
-                        int(parts[1].strip())
+                        int(header_fields[1])
                     except ValueError:
                         start_line = 1
             
