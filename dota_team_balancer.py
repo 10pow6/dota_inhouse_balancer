@@ -7,6 +7,15 @@ def calculate_rms(team_mmrs):
     """Calculate Root Mean Square (Quadratic Mean) for a team"""
     return math.sqrt(sum(mmr**2 for mmr in team_mmrs) / len(team_mmrs))
 
+def calculate_avg(team_mmrs):
+    """Arithmetic mean (average MMR) of a team"""
+    return sum(team_mmrs) / len(team_mmrs)
+
+def calculate_std(team_mmrs):
+    """Population standard deviation (skill spread) of a team"""
+    mean = calculate_avg(team_mmrs)
+    return math.sqrt(sum((mmr - mean) ** 2 for mmr in team_mmrs) / len(team_mmrs))
+
 def read_team_restrictions(filename="prevent_same_team.txt"):
     """Read team restrictions from file (players who cannot be on same team)"""
     restrictions = []
@@ -105,11 +114,43 @@ def check_forced_team_validity(team_a_indices, team_b_indices, player_names, for
     
     return True
 
-def find_best_team_assignments(players_mmr, restrictions=None, forced_groups=None, top_n=3):
-    """Find the top N most balanced team assignments using RMS with restrictions and forced teams"""
+# How heavily the multi-objective lens weights the spread (std) gap relative to
+# the average gap. Both terms are in MMR units, so 1.0 weights them equally.
+# Higher = punish lopsided skill distribution (e.g. stacking smurfs) more
+# aggressively, at the cost of allowing a slightly larger average gap.
+MULTI_STD_WEIGHT = 1.0
+
+# The three balancing "lenses". Each scores the same set of valid combinations
+# differently; lower score = more balanced.
+#   - average: equalize total team strength (the standard matchmaking metric)
+#   - multi:   weighted blend of the average gap and the spread (std) gap, so a
+#              split with a slightly worse average but a much fairer skill
+#              distribution can win. Stacking high-MMR players onto one team
+#              spikes the std gap, so this lens naturally splits the carries.
+#   - rms:     equalize the quadratic mean (over-weights high-MMR players)
+LENSES = [
+    {
+        'key': 'multi',
+        'title': 'MULTI-OBJECTIVE (Average gap + weighted spread gap)',
+        'sort': lambda a: a['avg_diff'] + MULTI_STD_WEIGHT * a['std_diff'],
+    },
+    {
+        'key': 'average',
+        'title': 'AVERAGE (Total team strength)',
+        'sort': lambda a: a['avg_diff'],
+    },
+    {
+        'key': 'rms',
+        'title': 'RMS (Quadratic mean)',
+        'sort': lambda a: a['rms_diff'],
+    },
+]
+
+def evaluate_all_assignments(players_mmr, restrictions=None, forced_groups=None):
+    """Score every valid team split, returning a metrics dict per combination."""
     n = len(players_mmr)
     player_names = [p[0] for p in players_mmr]
-    
+
     # Anchor index 0 to team A so each split is counted once
     # (otherwise {0,1,2,3,4} vs {5,6,7,8,9} appears twice with teams swapped)
     all_combinations = (
@@ -124,40 +165,39 @@ def find_best_team_assignments(players_mmr, restrictions=None, forced_groups=Non
 
     for team_a_indices in all_combinations:
         team_b_indices = tuple(i for i in range(n) if i not in team_a_indices)
-        
+
         # Check restrictions (cannot be on same team)
         if restrictions:
             team_a_valid = check_team_validity(team_a_indices, player_names, restrictions)
             team_b_valid = check_team_validity(team_b_indices, player_names, restrictions)
-            
+
             if not (team_a_valid and team_b_valid):
                 restriction_violations += 1
                 invalid_count += 1
                 continue
-        
+
         # Check forced teams (must be on same team)
         if forced_groups:
             if not check_forced_team_validity(team_a_indices, team_b_indices, player_names, forced_groups):
                 forced_violations += 1
                 invalid_count += 1
                 continue
-        
+
         team_a_mmrs = [players_mmr[i][1] for i in team_a_indices]
         team_b_mmrs = [players_mmr[i][1] for i in team_b_indices]
-        
-        rms_a = calculate_rms(team_a_mmrs)
-        rms_b = calculate_rms(team_b_mmrs)
-        
-        difference = abs(rms_a - rms_b)
-        
+
+        avg_a, avg_b = calculate_avg(team_a_mmrs), calculate_avg(team_b_mmrs)
+        rms_a, rms_b = calculate_rms(team_a_mmrs), calculate_rms(team_b_mmrs)
+        std_a, std_b = calculate_std(team_a_mmrs), calculate_std(team_b_mmrs)
+
         assignments.append({
             'team_a_indices': team_a_indices,
             'team_b_indices': team_b_indices,
-            'difference': difference,
-            'rms_a': rms_a,
-            'rms_b': rms_b
+            'avg_a': avg_a, 'avg_b': avg_b, 'avg_diff': abs(avg_a - avg_b),
+            'rms_a': rms_a, 'rms_b': rms_b, 'rms_diff': abs(rms_a - rms_b),
+            'std_a': std_a, 'std_b': std_b, 'std_diff': abs(std_a - std_b),
         })
-    
+
     if invalid_count > 0:
         print(f"\nFiltered out {invalid_count} team combinations:")
         if restriction_violations > 0:
@@ -165,12 +205,16 @@ def find_best_team_assignments(players_mmr, restrictions=None, forced_groups=Non
         if forced_violations > 0:
             print(f"  - {forced_violations} due to 'force same team' requirements")
         print(f"Valid combinations remaining: {len(assignments)}")
-    
+
     if not assignments:
         raise ValueError("No valid team combinations found with the given restrictions and forced teams!")
-    
-    assignments.sort(key=lambda x: x['difference'])
-    return assignments[:min(top_n, len(assignments))]
+
+    return assignments
+
+def top_by_lens(assignments, lens, top_n=3):
+    """Return the top N assignments ranked by the given lens' sort key."""
+    ranked = sorted(assignments, key=lens['sort'])
+    return ranked[:min(top_n, len(ranked))]
 
 def read_players_from_file(filename="player_list.txt"):
     """Read players from a CSV file with headers: name,mmr,playing"""
@@ -330,69 +374,55 @@ def validate_forced_teams(forced_groups, playing_players):
         print()
 
 def print_assignment(players_data, assignment, option_num):
-    """Print a single team assignment"""
+    """Print a single team assignment with avg / RMS / std for both teams"""
     team_a = [players_data[i] for i in assignment['team_a_indices']]
     team_b = [players_data[i] for i in assignment['team_b_indices']]
-    
-    team_a_mmrs = [player[1] for player in team_a]
-    team_b_mmrs = [player[1] for player in team_b]
-    
-    avg_a = sum(team_a_mmrs) / 5
-    avg_b = sum(team_b_mmrs) / 5
-    
+
     print(f"\n{'='*50}")
     print(f"OPTION {option_num}")
     print(f"{'='*50}")
-    
+
     print("\nTEAM A:")
     for player, mmr in sorted(team_a, key=lambda x: x[1], reverse=True):
         print(f"  {player}: {mmr}")
-    print(f"\nTeam A RMS: {assignment['rms_a']:.1f}")
-    print(f"Team A Average: {avg_a:.1f}")
-    
+    print(f"\nTeam A  Avg: {assignment['avg_a']:.1f}  RMS: {assignment['rms_a']:.1f}  Std: {assignment['std_a']:.1f}")
+
     print("\n" + "-"*30)
-    
+
     print("\nTEAM B:")
     for player, mmr in sorted(team_b, key=lambda x: x[1], reverse=True):
         print(f"  {player}: {mmr}")
-    print(f"\nTeam B RMS: {assignment['rms_b']:.1f}")
-    print(f"Team B Average: {avg_b:.1f}")
-    
+    print(f"\nTeam B  Avg: {assignment['avg_b']:.1f}  RMS: {assignment['rms_b']:.1f}  Std: {assignment['std_b']:.1f}")
+
     print("\n" + "-"*30)
-    print(f"RMS Difference: {assignment['difference']:.1f}")
-    print(f"Average Difference: {abs(avg_a - avg_b):.1f}")
+    print(f"Average Difference: {assignment['avg_diff']:.1f}")
+    print(f"RMS Difference:     {assignment['rms_diff']:.1f}")
+    print(f"Std Difference:     {assignment['std_diff']:.1f}")
 
 def write_assignment_to_file(file, players_data, assignment, option_num):
-    """Write a single assignment to file"""
+    """Write a single assignment to file with avg / RMS / std for both teams"""
     team_a = [players_data[i] for i in assignment['team_a_indices']]
     team_b = [players_data[i] for i in assignment['team_b_indices']]
-    
-    team_a_mmrs = [player[1] for player in team_a]
-    team_b_mmrs = [player[1] for player in team_b]
-    
-    avg_a = sum(team_a_mmrs) / 5
-    avg_b = sum(team_b_mmrs) / 5
-    
+
     file.write(f"\nOPTION {option_num}\n")
     file.write("="*50 + "\n\n")
-    
+
     file.write("TEAM A:\n")
     for player, mmr in sorted(team_a, key=lambda x: x[1], reverse=True):
         file.write(f"  {player}: {mmr}\n")
-    file.write(f"\nTeam A RMS: {assignment['rms_a']:.1f}\n")
-    file.write(f"Team A Average: {avg_a:.1f}\n")
-    
+    file.write(f"\nTeam A  Avg: {assignment['avg_a']:.1f}  RMS: {assignment['rms_a']:.1f}  Std: {assignment['std_a']:.1f}\n")
+
     file.write("\n" + "-"*30 + "\n\n")
-    
+
     file.write("TEAM B:\n")
     for player, mmr in sorted(team_b, key=lambda x: x[1], reverse=True):
         file.write(f"  {player}: {mmr}\n")
-    file.write(f"\nTeam B RMS: {assignment['rms_b']:.1f}\n")
-    file.write(f"Team B Average: {avg_b:.1f}\n")
-    
+    file.write(f"\nTeam B  Avg: {assignment['avg_b']:.1f}  RMS: {assignment['rms_b']:.1f}  Std: {assignment['std_b']:.1f}\n")
+
     file.write("\n" + "-"*30 + "\n")
-    file.write(f"RMS Difference: {assignment['difference']:.1f}\n")
-    file.write(f"Average Difference: {abs(avg_a - avg_b):.1f}\n")
+    file.write(f"Average Difference: {assignment['avg_diff']:.1f}\n")
+    file.write(f"RMS Difference:     {assignment['rms_diff']:.1f}\n")
+    file.write(f"Std Difference:     {assignment['std_diff']:.1f}\n")
 
 def create_sample_files():
     """Create sample files"""
@@ -435,7 +465,7 @@ Frank,Jack
     print("  - 'force_same_team_sample.txt' (rename to 'force_same_team.txt')")
 
 def main():
-    print("DOTA Team Balancer with Force Same Team (RMS Method)")
+    print("DOTA Team Balancer (Multi-Objective / Average / RMS lenses)")
     print("="*50)
     
     try:
@@ -483,56 +513,69 @@ def main():
                         return
         
         try:
-            top_assignments = find_best_team_assignments(playing_players, restrictions, forced_groups, top_n=3)
+            all_assignments = evaluate_all_assignments(playing_players, restrictions, forced_groups)
         except ValueError as e:
             print(f"\nERROR: {e}")
             print("\nThe team restrictions and forced teams might be conflicting or too strict.")
             print("Consider relaxing some restrictions or forced team requirements.")
             return
-        
+
+        # Rank the same valid combinations under each lens
+        lens_results = {
+            lens['key']: top_by_lens(all_assignments, lens, top_n=3)
+            for lens in LENSES
+        }
+
+        for lens in LENSES:
+            top_assignments = lens_results[lens['key']]
+            print("\n" + "="*50)
+            print(f"TOP 3 BY {lens['title']}")
+            if restrictions or forced_groups:
+                print("(With team restrictions and forced teams applied)")
+            print("="*50)
+
+            for i, assignment in enumerate(top_assignments, 1):
+                print_assignment(playing_players, assignment, i)
+
+            if len(top_assignments) < 3:
+                print(f"\nNote: Only {len(top_assignments)} valid team combinations found due to restrictions/forced teams")
+
         print("\n" + "="*50)
-        print("TOP 3 MOST BALANCED TEAM ASSIGNMENTS")
-        if restrictions or forced_groups:
-            print("(With team restrictions and forced teams applied)")
-        print("="*50)
-        
-        for i, assignment in enumerate(top_assignments, 1):
-            print_assignment(playing_players, assignment, i)
-        
-        if len(top_assignments) < 3:
-            print(f"\nNote: Only {len(top_assignments)} valid team combinations found due to restrictions/forced teams")
-        
+        print("Tip: the Multi-Objective lens (average gap, std tiebreaker) is the")
+        print("recommended default. Average targets equal total strength; RMS")
+        print("over-weights high-MMR players.")
+
         print("\n" + "="*50)
         save = input("\nSave results to file? (y/n): ").strip().lower()
         if save == 'y':
-            option = input("Which option to save? (1/2/3/all): ").strip().lower()
+            valid_keys = [lens['key'] for lens in LENSES]
+            lens_choice = input(f"Which lens to save? ({'/'.join(valid_keys)}/all): ").strip().lower()
             output_filename = input("Enter output filename (default: teams.txt): ").strip()
             if not output_filename:
                 output_filename = "teams.txt"
-            
+
+            lenses_to_save = LENSES if lens_choice in ('all', '') else \
+                [lens for lens in LENSES if lens['key'] == lens_choice]
+            if not lenses_to_save:
+                print(f"Unknown lens '{lens_choice}'. Saving all lenses by default.")
+                lenses_to_save = LENSES
+
             try:
                 with open(output_filename, 'w') as f:
                     f.write("DOTA TEAM ASSIGNMENTS\n")
                     if restrictions or forced_groups:
                         f.write("(With team restrictions and forced teams applied)\n")
                     f.write("="*50 + "\n")
-                    
-                    if option == 'all':
+
+                    for lens in lenses_to_save:
+                        top_assignments = lens_results[lens['key']]
+                        f.write(f"\nTOP {len(top_assignments)} BY {lens['title']}\n")
+                        f.write("="*50 + "\n")
                         for i, assignment in enumerate(top_assignments, 1):
                             write_assignment_to_file(f, playing_players, assignment, i)
-                            if i < len(top_assignments):
-                                f.write("\n\n")
-                    elif option in ['1', '2', '3']:
-                        idx = int(option) - 1
-                        if idx < len(top_assignments):
-                            write_assignment_to_file(f, playing_players, top_assignments[idx], int(option))
-                        else:
-                            print(f"Option {option} not available. Saving Option 1.")
-                            write_assignment_to_file(f, playing_players, top_assignments[0], 1)
-                    else:
-                        print("Invalid option. Saving Option 1 by default.")
-                        write_assignment_to_file(f, playing_players, top_assignments[0], 1)
-                
+                            f.write("\n")
+                        f.write("\n")
+
                 print(f"\nResults saved to {output_filename}")
             except Exception as e:
                 print(f"Error saving file: {str(e)}")
